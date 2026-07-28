@@ -1,5 +1,22 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:4000/api/v1';
 
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
+export function isLoggedIn(): boolean {
+  if (typeof window === 'undefined') return false;
+  return !!window.localStorage.getItem('accessToken');
+}
+
+export function logout() {
+  if (typeof window !== 'undefined') window.localStorage.removeItem('accessToken');
+}
+
 function authHeaders(): HeadersInit {
   if (typeof window === 'undefined') return {};
   const token = window.localStorage.getItem('accessToken');
@@ -20,7 +37,12 @@ async function request(path: string, options: RequestInit = {}) {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.message ?? `Request failed: ${res.status}`);
+    if (res.status === 401) {
+      // Token missing/expired/invalid — clear it so isLoggedIn() reflects reality
+      // and the UI doesn't keep offering "logged in" actions with a dead token.
+      logout();
+    }
+    throw new ApiError(body.message ?? `Request failed: ${res.status}`, res.status);
   }
   return res.json();
 }

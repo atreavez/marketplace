@@ -1,15 +1,23 @@
-import Link from 'next/link';
+import { Hero } from '../components/landing/Hero';
+import { CategoryExplorer } from '../components/landing/CategoryExplorer';
+import { Trending } from '../components/landing/Trending';
+import { AIRecommendations } from '../components/landing/AIRecommendations';
+import { Sellers } from '../components/landing/Sellers';
+import { TrustStats } from '../components/landing/TrustStats';
+import { Testimonials } from '../components/landing/Testimonials';
+import { ClosingCTA } from '../components/landing/ClosingCTA';
 
 export default function Home() {
   return (
-    <div className="space-y-4">
-      <h1 className="text-3xl font-bold">Universal Marketplace — Slice 1</h1>
-      <p className="text-neutral-600">
-        Auth, listings, search, and deal inquiries. Payments, chat, and AI are not wired up yet.
-      </p>
-      <Link href="/listings" className="inline-block bg-black text-white px-4 py-2 rounded">
-        Browse listings
-      </Link>
-    </div>
+    <main>
+      <Hero />
+      <CategoryExplorer />
+      <Trending />
+      <AIRecommendations />
+      <Sellers />
+      <TrustStats />
+      <Testimonials />
+      <ClosingCTA />
+    </main>
   );
 }

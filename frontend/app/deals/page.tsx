@@ -1,6 +1,10 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { api } from '../../lib/api';
+import Link from 'next/link';
+import { api, isLoggedIn, ApiError } from '../../lib/api';
+import { Button } from '../../components/ui/Button';
+import { Badge } from '../../components/ui/Badge';
+import { SectionMarker } from '../../components/ui/SectionMarker';
 
 type Deal = {
   id: string;
@@ -28,14 +32,32 @@ export default function DealsPage() {
   const [deals, setDeals] = useState<Deal[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [authed, setAuthed] = useState<boolean | null>(null); // null = not checked yet
+  const [loading, setLoading] = useState(true);
 
   async function load() {
-    const data = await api.myDeals();
-    setDeals(data);
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await api.myDeals();
+      setDeals(data);
+    } catch (err: any) {
+      // A 401 here means the token was missing/expired — api.ts already cleared it.
+      setAuthed(false);
+      setError(err.message ?? 'Could not load deals.');
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
-    load();
+    const loggedIn = isLoggedIn();
+    setAuthed(loggedIn);
+    if (loggedIn) {
+      load();
+    } else {
+      setLoading(false); // don't even attempt the request — avoids the guaranteed 401
+    }
   }, []);
 
   async function act(dealId: string, toStage: string) {
@@ -45,6 +67,7 @@ export default function DealsPage() {
       await api.transitionDeal(dealId, toStage);
       await load();
     } catch (err: any) {
+      if (err instanceof ApiError && err.status === 401) setAuthed(false);
       setError(err.message);
     } finally {
       setBusyId(null);
@@ -69,60 +92,98 @@ export default function DealsPage() {
       }
       await load();
     } catch (err: any) {
+      if (err instanceof ApiError && err.status === 401) setAuthed(false);
       setError(err.message);
     } finally {
       setBusyId(null);
     }
   }
 
-  return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold">My Deals</h1>
-      {error && <p className="text-red-600 text-sm">{error}</p>}
-      {deals.length === 0 && <p className="text-neutral-500">No deals yet.</p>}
+  if (authed === false) {
+    return (
+      <main className="mx-auto max-w-content px-6 py-16">
+        <SectionMarker index="—" label="My deals" />
+        <h1 className="mt-4 font-display text-display-md font-semibold tracking-tight">
+          Log in to see your deals.
+        </h1>
+        <p className="mt-2 text-muted">Every negotiation and payment lives here once you're signed in.</p>
+        <Link href="/login" className="mt-6 inline-block">
+          <Button>Log in</Button>
+        </Link>
+      </main>
+    );
+  }
 
-      {deals.map((d) => (
-        <div key={d.id} className="border rounded p-4 bg-white space-y-2">
-          <div className="flex justify-between items-center">
-            <h3 className="font-semibold">{d.listing.title}</h3>
-            <span className="text-xs uppercase tracking-wide bg-neutral-100 px-2 py-1 rounded">
-              {d.stage}
-            </span>
-          </div>
-          {d.message && <p className="text-sm text-neutral-600">"{d.message}"</p>}
-
-          <div className="flex gap-2 flex-wrap pt-2">
-            {(NEXT_CLIENT_STAGE[d.stage] ?? []).map((action) => (
-              <button
-                key={action.toStage}
-                disabled={busyId === d.id}
-                onClick={() => act(d.id, action.toStage)}
-                className="text-sm border rounded px-3 py-1 hover:bg-neutral-50 disabled:opacity-50"
-              >
-                {action.label}
-              </button>
-            ))}
-            {d.stage === 'ACCEPTED' && (
-              <>
-                <button
-                  disabled={busyId === d.id}
-                  onClick={() => pay(d.id, 'STRIPE')}
-                  className="text-sm bg-black text-white rounded px-3 py-1 disabled:opacity-50"
-                >
-                  Pay with card
-                </button>
-                <button
-                  disabled={busyId === d.id}
-                  onClick={() => pay(d.id, 'BTCPAY')}
-                  className="text-sm bg-orange-500 text-white rounded px-3 py-1 disabled:opacity-50"
-                >
-                  Pay with crypto
-                </button>
-              </>
-            )}
-          </div>
+  if (loading) {
+    return (
+      <main className="mx-auto max-w-content px-6 py-16">
+        <div className="space-y-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="h-28 animate-pulse rounded-lg border border-line bg-ink/[0.03]" />
+          ))}
         </div>
-      ))}
-    </div>
+      </main>
+    );
+  }
+
+  return (
+    <main className="mx-auto max-w-content px-6 py-16">
+      <SectionMarker index="—" label="My deals" />
+      <h1 className="mt-4 font-display text-display-md font-semibold tracking-tight">
+        Your deal ledger.
+      </h1>
+
+      {error && (
+        <p className="mt-4 rounded-md border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
+          {error}
+        </p>
+      )}
+      {deals.length === 0 && !error && (
+        <p className="mt-6 text-muted">No deals yet — inquiries you send or receive will show up here.</p>
+      )}
+
+      <div className="mt-8 space-y-3">
+        {deals.map((d) => (
+          <div key={d.id} className="space-y-3 rounded-lg border border-line bg-surface p-5">
+            <div className="flex items-center justify-between">
+              <h3 className="font-medium">{d.listing.title}</h3>
+              <Badge tone={d.stage === 'PAID' ? 'verified' : d.stage === 'DISPUTED' ? 'danger' : 'neutral'}>
+                {d.stage.replace('_', ' ')}
+              </Badge>
+            </div>
+            {d.message && <p className="text-sm text-muted">"{d.message}"</p>}
+
+            <div className="flex flex-wrap gap-2 pt-1">
+              {(NEXT_CLIENT_STAGE[d.stage] ?? []).map((action) => (
+                <Button
+                  key={action.toStage}
+                  variant="secondary"
+                  size="sm"
+                  disabled={busyId === d.id}
+                  onClick={() => act(d.id, action.toStage)}
+                >
+                  {action.label}
+                </Button>
+              ))}
+              {d.stage === 'ACCEPTED' && (
+                <>
+                  <Button size="sm" disabled={busyId === d.id} onClick={() => pay(d.id, 'STRIPE')}>
+                    Pay with card
+                  </Button>
+                  <Button
+                    variant="brass"
+                    size="sm"
+                    disabled={busyId === d.id}
+                    onClick={() => pay(d.id, 'BTCPAY')}
+                  >
+                    Pay with crypto
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </main>
   );
 }

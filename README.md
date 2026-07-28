@@ -65,6 +65,59 @@ point real users or real money at it.
   (`stripe listen --forward-to`) and a BTCPay testnet store before you trust
   it with real money.
 
+## Fixes from initial run
+Running Slice 1+2 for real surfaced two real bugs, now fixed:
+- **Unhandled 401 crash on `/deals` and the listing detail page** — both
+  fetched data in `useEffect` with no `.catch()`, so a missing/expired auth
+  token threw an unhandled promise rejection instead of showing anything.
+  `/deals` now checks auth state before fetching and shows a "log in first"
+  screen; `api.ts` now exposes a typed `ApiError` (with `.status`) so pages
+  can tell a 401 apart from other failures and clear the dead token.
+- **Next.js 14 was EOL** (end of life Oct 2025, with real CVEs since) —
+  bumped to Next.js 15.5.18 / React 19. This also required updating dynamic
+  route pages for Next 15's async `params` (now a `Promise`, not a plain
+  object) — `app/listings/[id]/page.tsx` was updated accordingly. Requires
+  Node 18.18+ (Node 20 LTS recommended).
+
+## Design system
+The frontend now has a real, documented design system instead of default
+Tailwind grey — built around one idea: this platform's actual product is a
+deal ledger (INQUIRY → NEGOTIATION → ACCEPTED → PAID → RELEASED, the same
+state machine from the Payments slice), so the visual identity makes that
+trail visible rather than decorating on top of a generic template.
+
+- **Tokens** — `app/globals.css` defines the full system as CSS custom
+  properties (color, type, spacing, radius, shadow, motion), consumed by
+  `tailwind.config.js`. Dark mode is a `.dark` class swap on `<html>`, same
+  token names, different values — nothing in component code branches on
+  light/dark.
+- **Type** — Clash Display (headlines only, used sparingly), Switzer (UI/body),
+  JetBrains Mono (prices, deal stages, stats — anything that's "data" reads
+  as data).
+- **Signature elements** — the hero's "ledger stub" search card (styled like
+  a deal receipt, showing a live-looking INQUIRY→PAID trail) and the numbered
+  `SectionMarker` rail that runs down the landing page (`01 · Discover`,
+  `02 · Right now`, etc.) — both derived from the real Deal state machine,
+  not generic decoration.
+- **Components** — `components/ui/`: `Button` (4 variants), `Badge`, `Card`,
+  `Input`, `SectionMarker`, `Swatch` (a deterministic gradient+icon
+  placeholder standing in for listing photos — no fake product images).
+- **Landing page** — `components/landing/`: Nav (glass, restrained to just
+  this one spot), Hero, CategoryExplorer, Trending (tabbed — consolidates
+  trending/featured/offers into one considered section instead of three
+  shallow ones), AIRecommendations (horizontal rail, deliberately different
+  layout rhythm from the grid above it), Sellers (tabbed top-rated/nearby),
+  TrustStats (count-up numbers), Testimonials (single rotating editorial
+  quote, not a 3-card grid), ClosingCTA (CTA + newsletter combined).
+- **What's NOT restyled**: the functional flows (register/login/listings/
+  deals) got a **light-touch pass** — same tokens and components so nothing
+  clashes, but they weren't redesigned from scratch. The brief asked for the
+  landing page first; these are next if you want the same level of craft
+  applied there.
+- **Fonts load from Fontshare/Google Fonts CDNs** — confirm those aren't
+  blocked by your network/CSP before relying on them in production; self-host
+  the font files if they need to be guaranteed available offline or IP-region-restricted.
+
 ## Running it locally
 
 ### 1. Database
