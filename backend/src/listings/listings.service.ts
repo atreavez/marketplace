@@ -1,5 +1,4 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateListingDto, SearchListingsDto } from './dto/listing.dto';
 
@@ -15,7 +14,7 @@ export class ListingsService {
         description: dto.description,
         price: dto.price,
         categoryId: dto.categoryId,
-        customAttrs: (dto.customAttrs ?? {}) as Prisma.InputJsonValue,
+        customAttrs: dto.customAttrs ?? {},
         status: 'DRAFT',
       },
     });

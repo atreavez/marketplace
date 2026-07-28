@@ -24,7 +24,7 @@ let ListingsService = class ListingsService {
                 description: dto.description,
                 price: dto.price,
                 categoryId: dto.categoryId,
-                customAttrs: (dto.customAttrs ?? {}),
+                customAttrs: dto.customAttrs ?? {},
                 status: 'DRAFT',
             },
         });

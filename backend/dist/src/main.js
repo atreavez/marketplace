@@ -9,7 +9,7 @@ const helmet_1 = __importDefault(require("helmet"));
 const swagger_1 = require("@nestjs/swagger");
 const app_module_1 = require("./app.module");
 async function bootstrap() {
-    const app = await core_1.NestFactory.create(app_module_1.AppModule);
+    const app = await core_1.NestFactory.create(app_module_1.AppModule, { rawBody: true });
     app.use((0, helmet_1.default)());
     app.enableCors({
         origin: process.env.CORS_ORIGIN?.split(',') ?? ['http://localhost:3000'],

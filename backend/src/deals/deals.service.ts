@@ -2,13 +2,29 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateInquiryDto } from './dto/deal.dto';
 
-// Slice-1 state machine. PAID/SHIPPING/etc. stages are added in the Payments slice,
-// where the only way to reach PAID is a verified provider webhook — never a client PATCH.
-const ALLOWED_TRANSITIONS: Record<string, string[]> = {
+// Slice-2 state machine. Two separate transition tables on purpose:
+// - CLIENT_TRANSITIONS: reachable via the authenticated PATCH endpoint (buyer/seller actions)
+// - SYSTEM_TRANSITIONS: reachable only from server-side code that has independently
+//   verified something external (a payment webhook, a moderator decision) — never
+//   from a client request body. This is what stops "fake payment confirmed" fraud:
+//   a client can ask to move ACCEPTED -> AWAITING_PAYMENT, but nothing in the client-facing
+//   controller can ever set a deal to PAID.
+const CLIENT_TRANSITIONS: Record<string, string[]> = {
   INQUIRY: ['NEGOTIATION', 'CANCELLED'],
   NEGOTIATION: ['ACCEPTED', 'CANCELLED'],
-  ACCEPTED: [],
+  ACCEPTED: ['AWAITING_PAYMENT', 'CANCELLED'],
+  AWAITING_PAYMENT: ['CANCELLED'],
+  PAID: ['DISPUTED'], // buyer/seller can raise a dispute; release/refund are system-only
+  RELEASED: [],
+  DISPUTED: [],
+  REFUNDED: [],
   CANCELLED: [],
+};
+
+const SYSTEM_TRANSITIONS: Record<string, string[]> = {
+  AWAITING_PAYMENT: ['PAID'],       // only from a verified payment webhook
+  PAID: ['RELEASED', 'REFUNDED'],   // from auto-release timer, admin resolution, or refund webhook
+  DISPUTED: ['RELEASED', 'REFUNDED'], // from admin dispute resolution only
 };
 
 @Injectable()
@@ -41,6 +57,7 @@ export class DealsService {
     });
   }
 
+  // Client-facing transition — buyer or seller only, restricted to CLIENT_TRANSITIONS.
   async transition(dealId: string, actorId: string, toStage: string) {
     const deal = await this.prisma.deal.findUnique({ where: { id: dealId } });
     if (!deal) throw new NotFoundException('Deal not found');
@@ -48,18 +65,37 @@ export class DealsService {
       throw new ForbiddenException('Not a party to this deal');
     }
 
-    const allowed = ALLOWED_TRANSITIONS[deal.stage] ?? [];
+    const allowed = CLIENT_TRANSITIONS[deal.stage] ?? [];
     if (!allowed.includes(toStage)) {
       throw new BadRequestException(`Cannot move from ${deal.stage} to ${toStage}`);
     }
 
+    return this.applyTransition(dealId, deal.stage, toStage, actorId);
+  }
+
+  // System-only transition — called exclusively from verified webhook handlers
+  // (PaymentsService) or admin/dispute-resolution code. No controller exposes this
+  // directly to a client request body.
+  async systemTransition(dealId: string, toStage: string, actorId = 'system') {
+    const deal = await this.prisma.deal.findUnique({ where: { id: dealId } });
+    if (!deal) throw new NotFoundException('Deal not found');
+
+    const allowed = SYSTEM_TRANSITIONS[deal.stage] ?? [];
+    if (!allowed.includes(toStage)) {
+      throw new BadRequestException(`System cannot move deal from ${deal.stage} to ${toStage}`);
+    }
+
+    return this.applyTransition(dealId, deal.stage, toStage, actorId);
+  }
+
+  private async applyTransition(dealId: string, fromStage: string, toStage: string, actorId: string) {
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.deal.update({
         where: { id: dealId },
         data: { stage: toStage as any },
       });
       await tx.dealEvent.create({
-        data: { dealId, fromStage: deal.stage, toStage: toStage as any, actorId },
+        data: { dealId, fromStage: fromStage as any, toStage: toStage as any, actorId },
       });
       return updated;
     });

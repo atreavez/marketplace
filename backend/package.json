@@ -29,7 +29,8 @@
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "stripe": "^16.8.0"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.4.5",
@@ -45,12 +46,5 @@
     "ts-jest": "^29.2.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.5.0"
-  },
-  "allowScripts": {
-    "@nestjs/core@10.4.22": true,
-    "@prisma/client@5.22.0": true,
-    "@prisma/engines@5.22.0": true,
-    "argon2@0.40.3": true,
-    "prisma@5.22.0": true
   }
 }

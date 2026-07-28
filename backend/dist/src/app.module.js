@@ -16,6 +16,7 @@ const auth_module_1 = require("./auth/auth.module");
 const users_module_1 = require("./users/users.module");
 const listings_module_1 = require("./listings/listings.module");
 const deals_module_1 = require("./deals/deals.module");
+const payments_module_1 = require("./payments/payments.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -29,6 +30,7 @@ exports.AppModule = AppModule = __decorate([
             users_module_1.UsersModule,
             listings_module_1.ListingsModule,
             deals_module_1.DealsModule,
+            payments_module_1.PaymentsModule,
         ],
         providers: [{ provide: core_1.APP_GUARD, useClass: throttler_1.ThrottlerGuard }],
     })

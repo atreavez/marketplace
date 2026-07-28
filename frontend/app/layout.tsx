@@ -11,6 +11,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <Link href="/listings" className="font-semibold">Marketplace</Link>
           <Link href="/listings">Browse</Link>
           <Link href="/listings/new">Sell something</Link>
+          <Link href="/deals">My Deals</Link>
           <div className="ml-auto flex gap-4">
             <Link href="/login">Log in</Link>
             <Link href="/register">Sign up</Link>

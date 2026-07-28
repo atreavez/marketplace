@@ -5,7 +5,10 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // rawBody: true is required so payment webhook handlers can verify Stripe/BTCPay
+  // signatures against the exact bytes received — a JSON.stringify of the parsed
+  // body will not reproduce the same signature and silently breaks verification.
+  const app = await NestFactory.create(AppModule, { rawBody: true });
 
   app.use(helmet());
   app.enableCors({

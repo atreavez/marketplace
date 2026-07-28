@@ -46,4 +46,10 @@ export const api = {
     request('/deals', { method: 'POST', body: JSON.stringify(data) }),
 
   myDeals: () => request('/deals'),
+
+  transitionDeal: (dealId: string, toStage: string) =>
+    request(`/deals/${dealId}/stage`, { method: 'PATCH', body: JSON.stringify({ toStage }) }),
+
+  initiatePayment: (dealId: string, provider: 'STRIPE' | 'BTCPAY') =>
+    request(`/deals/${dealId}/payment`, { method: 'POST', body: JSON.stringify({ provider }) }),
 };

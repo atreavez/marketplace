@@ -12,11 +12,21 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.DealsService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma/prisma.service");
-const ALLOWED_TRANSITIONS = {
+const CLIENT_TRANSITIONS = {
     INQUIRY: ['NEGOTIATION', 'CANCELLED'],
     NEGOTIATION: ['ACCEPTED', 'CANCELLED'],
-    ACCEPTED: [],
+    ACCEPTED: ['AWAITING_PAYMENT', 'CANCELLED'],
+    AWAITING_PAYMENT: ['CANCELLED'],
+    PAID: ['DISPUTED'],
+    RELEASED: [],
+    DISPUTED: [],
+    REFUNDED: [],
     CANCELLED: [],
+};
+const SYSTEM_TRANSITIONS = {
+    AWAITING_PAYMENT: ['PAID'],
+    PAID: ['RELEASED', 'REFUNDED'],
+    DISPUTED: ['RELEASED', 'REFUNDED'],
 };
 let DealsService = class DealsService {
     constructor(prisma) {
@@ -54,17 +64,30 @@ let DealsService = class DealsService {
         if (actorId !== deal.buyerId && actorId !== deal.sellerId) {
             throw new common_1.ForbiddenException('Not a party to this deal');
         }
-        const allowed = ALLOWED_TRANSITIONS[deal.stage] ?? [];
+        const allowed = CLIENT_TRANSITIONS[deal.stage] ?? [];
         if (!allowed.includes(toStage)) {
             throw new common_1.BadRequestException(`Cannot move from ${deal.stage} to ${toStage}`);
         }
+        return this.applyTransition(dealId, deal.stage, toStage, actorId);
+    }
+    async systemTransition(dealId, toStage, actorId = 'system') {
+        const deal = await this.prisma.deal.findUnique({ where: { id: dealId } });
+        if (!deal)
+            throw new common_1.NotFoundException('Deal not found');
+        const allowed = SYSTEM_TRANSITIONS[deal.stage] ?? [];
+        if (!allowed.includes(toStage)) {
+            throw new common_1.BadRequestException(`System cannot move deal from ${deal.stage} to ${toStage}`);
+        }
+        return this.applyTransition(dealId, deal.stage, toStage, actorId);
+    }
+    async applyTransition(dealId, fromStage, toStage, actorId) {
         return this.prisma.$transaction(async (tx) => {
             const updated = await tx.deal.update({
                 where: { id: dealId },
                 data: { stage: toStage },
             });
             await tx.dealEvent.create({
-                data: { dealId, fromStage: deal.stage, toStage: toStage, actorId },
+                data: { dealId, fromStage: fromStage, toStage: toStage, actorId },
             });
             return updated;
         });

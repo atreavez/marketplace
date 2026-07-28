@@ -1,6 +1,6 @@
-// Prisma schema — Slice 1: Auth, Listings, Search, Deal Inquiry
-// Full platform schema (payments, chat, AI, notifications) is designed
-// separately and will be layered on in later slices.
+// Prisma schema — Slice 1 (Auth, Listings, Search, Deal Inquiry)
+// + Slice 2 (Payments: Stripe + BTCPay Server, escrow-lite via delayed payout)
+// Chat, AI, and notifications are still designed-but-not-implemented.
 
 generator client {
   provider = "prisma-client-js"
@@ -29,7 +29,24 @@ enum DealStage {
   INQUIRY
   NEGOTIATION
   ACCEPTED
+  AWAITING_PAYMENT
+  PAID
+  RELEASED
+  DISPUTED
+  REFUNDED
   CANCELLED
+}
+
+enum PaymentProvider {
+  STRIPE
+  BTCPAY
+}
+
+enum PaymentStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+  REFUNDED
 }
 
 model User {
@@ -97,8 +114,31 @@ model Deal {
   createdAt  DateTime    @default(now())
 
   events     DealEvent[]
+  payment    Payment?
 
   @@map("deals")
+}
+
+// One payment attempt per deal in this slice (a failed attempt can be retried by
+// creating a fresh Payment row rather than mutating a failed one — keeps the
+// financial record append-only in spirit even though the model isn't itself an event log).
+model Payment {
+  id            String          @id @default(uuid())
+  dealId        String          @unique
+  deal          Deal            @relation(fields: [dealId], references: [id])
+  provider      PaymentProvider
+  providerRef   String          @unique // Stripe PaymentIntent id, or BTCPay invoice id
+  amount        Decimal         @db.Decimal(12, 2)
+  currency      String
+  status        PaymentStatus   @default(PENDING)
+  cryptoTxHash  String?
+  confirmations Int?
+  raw           Json?           // last raw webhook payload, for audit/debugging
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([provider, providerRef])
+  @@map("payments")
 }
 
 // Immutable audit trail — rows are only ever inserted, never updated/deleted.
