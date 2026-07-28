@@ -2,3 +2,5 @@ node_modules/
 .next/
 backend/dist/
 backend/build/
+backend/dist/
+backend/build/
