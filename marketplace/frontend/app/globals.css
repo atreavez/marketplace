@@ -1,0 +1,136 @@
+@import url('https://api.fontshare.com/v2/css?f[]=clash-display@600,700&f[]=switzer@400,500,600,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================================================================
+   DESIGN TOKENS
+   Signature concept: "The Ledger" — every transaction on this platform has a
+   real, auditable trail (INQUIRY -> NEGOTIATION -> ACCEPTED -> PAID -> RELEASED).
+   The visual language makes that trail visible: mono data type, numbered
+   section markers, a hairline "rail" that runs through the page like a
+   receipt stub. Trust made visible, not decorated on top.
+   ========================================================================== */
+
+:root {
+  /* Color — light mode (default) */
+  --color-ink: 11 14 20;          /* #0B0E14 — primary text, dark surfaces */
+  --color-paper: 246 247 244;     /* #F6F7F4 — page background, porcelain */
+  --color-surface: 255 255 255;   /* #FFFFFF — card/panel surfaces */
+  --color-verified: 31 111 92;    /* #1F6F5C — trust/escrow/paid accent */
+  --color-verified-soft: 224 237 233;
+  --color-brass: 192 138 62;      /* #C08A3E — premium/featured accent, sparing use */
+  --color-brass-soft: 245 234 218;
+  --color-line: 227 226 220;      /* #E3E2DC — hairline borders */
+  --color-muted: 107 111 118;     /* #6B6F76 — secondary text */
+  --color-danger: 176 58 46;      /* reserved: disputes/errors only */
+
+  --font-display: 'Clash Display', ui-sans-serif, system-ui, sans-serif;
+  --font-body: 'Switzer', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+  --space-24: 6rem;
+  --space-32: 8rem;
+
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-full: 999px;
+
+  --shadow-sm: 0 1px 2px rgba(11, 14, 20, 0.04), 0 1px 1px rgba(11, 14, 20, 0.03);
+  --shadow-md: 0 4px 16px rgba(11, 14, 20, 0.06), 0 2px 4px rgba(11, 14, 20, 0.04);
+  --shadow-lg: 0 24px 48px -12px rgba(11, 14, 20, 0.14), 0 4px 12px rgba(11, 14, 20, 0.05);
+  --shadow-glow-verified: 0 0 0 1px rgba(31, 111, 92, 0.16), 0 12px 32px rgba(31, 111, 92, 0.18);
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 150ms;
+  --dur-med: 320ms;
+  --dur-slow: 640ms;
+}
+
+.dark {
+  --color-ink: 246 247 244;
+  --color-paper: 11 14 20;
+  --color-surface: 18 21 28;
+  --color-verified: 53 169 138;
+  --color-verified-soft: 20 41 36;
+  --color-brass: 224 168 85;
+  --color-brass-soft: 43 35 22;
+  --color-line: 35 39 51;
+  --color-muted: 146 153 166;
+  --color-danger: 224 104 90;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.24), 0 1px 1px rgba(0, 0, 0, 0.18);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.32), 0 2px 4px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 24px 48px -12px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: rgb(var(--color-paper));
+  color: rgb(var(--color-ink));
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  transition: background-color var(--dur-med) var(--ease-out-expo), color var(--dur-med) var(--ease-out-expo);
+}
+
+:focus-visible {
+  outline: 2px solid rgb(var(--color-verified));
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Ledger rail — the signature scroll motif: a hairline with numbered stamp
+   nodes at each major section, standing in for the platform's own deal-stage
+   audit trail. */
+.ledger-rail {
+  position: relative;
+}
+.ledger-rail::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgb(var(--color-line));
+}
+.ledger-node {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  color: rgb(var(--color-muted));
+}
+
+/* Fine film-grain texture at ~2.5% opacity, hero/dark sections only — keeps
+   large flat color fields from reading as a flat template. */
+.grain::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
