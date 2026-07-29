@@ -65,6 +65,96 @@ point real users or real money at it.
   (`stripe listen --forward-to`) and a BTCPay testnet store before you trust
   it with real money.
 
+## Infrastructure (Module 1)
+The backend now sits on top of a proper infrastructure layer instead of the
+bare-bones bootstrap from earlier slices. None of this changed any feature
+behavior — Auth/Listings/Deals/Payments work exactly as before, same routes,
+same logic.
+
+- **Config & validation** (`src/config/`) — env vars are validated with
+  class-validator at boot (`env.validation.ts`); the app refuses to start
+  with a clear error if something required is missing, instead of failing
+  confusingly on the first request that touches it. `configuration.ts`
+  exposes everything as a namespaced, typed object (`config.get('app.port')`)
+  rather than feature code reaching into `process.env` directly.
+- **Logging** — structured Pino logging (`nestjs-pino`), JSON in production
+  / pretty-printed in dev, with auth headers and passwords redacted from
+  logs by default. Every request gets a correlation ID.
+- **Request IDs** — every response carries an `X-Request-Id` header (reuses
+  an inbound one if a proxy already set it); the same ID shows up in every
+  log line for that request, so a user-reported error can be grepped
+  straight out of logs.
+- **Global error handling** — one exception filter for the whole app,
+  RFC7807-style `application/problem+json` responses. 5xx errors never leak
+  internals (stack traces, DB error text) to the client; validation errors
+  (4xx) return the actual field-level messages.
+- **API versioning** — proper Nest URI versioning (`enableVersioning`)
+  instead of a hardcoded prefix string. Produces the *exact same* routes as
+  before (`/api/v1/...`) — verified no controller hardcodes its own prefix —
+  but now a future `/api/v2/...` controller doesn't require an app-wide
+  migration.
+- **Health checks** — `GET /health/live` (liveness: is the process up) and
+  `GET /health` (readiness: can Postgres and Redis actually be reached),
+  both unversioned and outside the API prefix since infra probes shouldn't
+  need to know the API version.
+- **Redis** — `src/redis/` is a global module wrapping `ioredis`. Currently
+  used for distributed rate-limit storage (see below) and health checks;
+  available for caching/sessions in future modules without re-plumbing.
+- **Rate limiting** — the existing Throttler setup now uses Redis-backed
+  storage instead of in-memory, so limits are enforced correctly across
+  multiple app instances behind a load balancer. Per-route limits on auth
+  endpoints are unchanged.
+- **Compression, Helmet, CORS** — gzip/brotli response compression added;
+  Helmet and CORS configuration unchanged from before.
+- **Prisma** — added query logging (dev-only) and a graceful-shutdown hook
+  so the DB connection closes only after Nest finishes draining in-flight
+  requests, not before.
+- **Docker** — multi-stage `Dockerfile` for both backend and frontend
+  (`dev` target for hot-reload, `production` target for a minimal deployable
+  image, non-root user, healthcheck). `docker-compose.yml` now runs the full
+  local stack: Postgres, Redis, backend, frontend.
+- **Swagger/OpenAPI** — unchanged setup, now reflects the versioned API and
+  bumped to reflect Payments being part of the documented surface.
+- **ESLint + Prettier + Husky** — backend and frontend both lintable/
+  formattable now (frontend had no ESLint config at all before); a root
+  `package.json` hosts Husky + lint-staged so `git commit` lints and
+  formats staged files automatically. This root `package.json` is
+  tooling-only — it doesn't replace either app's own `package.json`, and
+  each app is still installed/run independently.
+- **Testing** — Jest was referenced in `package.json` scripts before but had
+  **no actual Jest config**, so `npm test` would have failed to parse
+  TypeScript at all; that's fixed. Added a real e2e smoke test
+  (`test/app.e2e-spec.ts`) and a unit test for the deal state machine
+  (`src/deals/deals.service.spec.ts`) — the most fraud-critical piece of
+  logic in the app, now actually under test.
+- **CI** (`.github/workflows/ci.yml`) — lint, format check, typecheck, unit
+  tests, e2e tests (against real Postgres/Redis service containers), build,
+  and a Docker build check, for both backend and frontend on every PR.
+
+### What's deliberately NOT done here
+The brief asked for "Clean Architecture" broadly. Full Clean Architecture
+(entities/use-cases/interface-adapters layers inside every feature module)
+would mean restructuring the already-working Auth/Listings/Deals/Payments
+code — directly against "do not regenerate or redesign completed
+functionality." Instead, Clean Architecture principles are applied at the
+boundary that's safe to touch: cross-cutting infrastructure (config,
+logging, error handling, health, Redis, Prisma) is isolated into its own
+layer, injected via DI, and feature modules depend on it without knowing
+its internals. The feature modules themselves keep their existing
+controller/service/DTO structure — which is already a reasonable
+feature-based organization — untouched. A deeper layering refactor inside
+each feature module is a separate, larger piece of work if you want it.
+
+### Running the full stack
+```bash
+docker compose up -d --build
+```
+This starts Postgres, Redis, the backend (hot-reload, port 4000), and the
+frontend (hot-reload, port 3000). First run: exec into the backend
+container (or run against `.env` locally) to run
+`npx prisma migrate dev` and seed categories — migrations aren't run
+automatically on container start in this setup.
+
 ## Fixes from initial run
 Running Slice 1+2 for real surfaced two real bugs, now fixed:
 - **Unhandled 401 crash on `/deals` and the listing detail page** — both
