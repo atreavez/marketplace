@@ -50,19 +50,113 @@ enum PaymentStatus {
 }
 
 model User {
-  id           String    @id @default(uuid())
-  email        String    @unique
-  passwordHash String
-  displayName  String
-  role         UserRole  @default(BUYER)
-  createdAt    DateTime  @default(now())
-  deletedAt    DateTime?
+  id                String    @id @default(uuid())
+  email             String    @unique
+  passwordHash      String
+  displayName       String
+  role              UserRole  @default(BUYER)
+  createdAt         DateTime  @default(now())
+  deletedAt         DateTime?
 
-  listings     Listing[]
-  buyerDeals   Deal[]    @relation("BuyerDeals")
-  sellerDeals  Deal[]    @relation("SellerDeals")
+  // --- Module 2: Identity & Authentication additions ---
+  // All new columns are optional/defaulted, so existing rows and every
+  // pre-existing query against User remain valid with no backfill required.
+  emailVerifiedAt   DateTime?
+  avatarUrl         String?
+  passwordChangedAt DateTime?
+  twoFactorEnabled  Boolean   @default(false)
+  twoFactorSecret   String?   // base32 TOTP secret; set once during setup, confirmed on enable
+
+  listings          Listing[]
+  buyerDeals        Deal[]    @relation("BuyerDeals")
+  sellerDeals       Deal[]    @relation("SellerDeals")
+
+  sessions             Session[]
+  loginHistory         LoginHistoryEntry[]
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens  PasswordResetToken[]
+  twoFactorBackupCodes TwoFactorBackupCode[]
 
   @@map("users")
+}
+
+// One row per logged-in device/browser. Owns the current refresh token for
+// that device (rotated on every /auth/refresh call) — this is what powers
+// device management, "log out this device", "log out everywhere", and lets
+// an access token be invalidated immediately on logout instead of waiting
+// out its 15-minute lifetime (see JwtStrategy's session check).
+model Session {
+  id                String    @id @default(uuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id])
+  refreshTokenHash  String    @unique // sha256 of the current valid opaque refresh token
+  previousTokenHash String?   // last rotated-away hash, kept briefly to detect reuse (token-theft signal)
+  deviceLabel       String?   // client-supplied ("Chrome on macOS"), best-effort
+  userAgent         String?
+  ip                String?
+  createdAt         DateTime  @default(now())
+  lastUsedAt        DateTime  @default(now())
+  expiresAt         DateTime
+  revokedAt         DateTime?
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+// Append-only — every login attempt, successful or not, for security
+// visibility ("has anyone tried to get into my account") and the Login
+// History feature. Never updated after insert.
+model LoginHistoryEntry {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  success   Boolean
+  reason    String? // e.g. "invalid_password", "2fa_failed", "success"
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@map("login_history")
+}
+
+model EmailVerificationToken {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@map("email_verification_tokens")
+}
+
+model PasswordResetToken {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  consumedAt DateTime?
+  requestIp  String?
+  createdAt  DateTime  @default(now())
+
+  @@map("password_reset_tokens")
+}
+
+// Single-use recovery codes issued when 2FA is enabled, for when the user
+// loses their authenticator device. Each code hashed at rest, like a password.
+model TwoFactorBackupCode {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  codeHash  String
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("two_factor_backup_codes")
 }
 
 model Category {

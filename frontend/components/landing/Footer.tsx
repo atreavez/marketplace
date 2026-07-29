@@ -13,7 +13,7 @@ export function Footer() {
       <div className="mx-auto max-w-content px-6 py-16">
         <div className="grid grid-cols-2 gap-8 md:grid-cols-5">
           <div className="col-span-2 md:col-span-1">
-            <div className="font-display text-lg font-semibold tracking-tight">Atreavez</div>
+            <div className="font-display text-lg font-semibold tracking-tight">B13</div>
             <p className="mt-3 max-w-[20ch] text-sm text-muted">
               One ledger for everything you buy, sell, and trade.
             </p>
@@ -36,7 +36,7 @@ export function Footer() {
 
         <div className="mt-16 flex flex-col items-center justify-between gap-4 border-t border-line pt-8 md:flex-row">
           <span className="font-mono text-xs text-muted">
-            © {new Date().getFullYear()} Atreavez General Technologies Ltd.
+            © {new Date().getFullYear()} B13.
           </span>
           <span className="font-mono text-xs text-muted">Built on an auditable deal ledger.</span>
         </div>

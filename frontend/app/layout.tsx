@@ -3,7 +3,7 @@ import { Nav } from '../components/landing/Nav';
 import { Footer } from '../components/landing/Footer';
 
 export const metadata = {
-  title: 'Atreavez — One marketplace, anything worth trading.',
+  title: 'B13 — One marketplace, anything worth trading.',
   description: 'Buy, sell, hire, and book — every deal tracked on an auditable ledger.',
 };
 

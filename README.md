@@ -155,6 +155,77 @@ container (or run against `.env` locally) to run
 `npx prisma migrate dev` and seed categories — migrations aren't run
 automatically on container start in this setup.
 
+## Identity & Authentication (Module 2)
+Built on top of the existing Auth/Users modules — registration and login
+keep their original request/response shape for existing callers (the
+frontend's login/register pages work unmodified), everything else is new.
+
+- **Registration / Login** — unchanged routes and behavior. Login now
+  branches: if the account has 2FA enabled, it returns
+  `{ twoFactorRequired: true, twoFactorToken }` instead of tokens, and the
+  client completes login via `POST /auth/2fa/verify`.
+- **JWT auth** — access tokens are still 15-minute JWTs, same shape
+  (`userId`/`email`/`role` on `req.user`), so every existing
+  `@CurrentUser()` consumer in Listings/Deals/Payments needed zero changes.
+  Two additions: a token issued before a password change is now rejected
+  even if not yet expired, and if the session backing a token has been
+  revoked (logout), the token stops working immediately instead of waiting
+  out its remaining lifetime.
+- **Refresh tokens** — no longer a bare stateless JWT. Each device gets a
+  `Session` row holding an opaque, rotated-on-use refresh token. Reusing an
+  already-rotated token (a token-theft signal) kills the whole session
+  defensively, not just that one request.
+- **Logout** (`POST /auth/logout`) revokes one session by refresh token.
+  **Logout all** (`POST /auth/logout-all`, authenticated) revokes every
+  *other* session for the account, keeping the calling device logged in.
+- **Email verification** — `POST /auth/verify-email/request` (authenticated)
+  and `/confirm` (public, token-based). Registration still auto-logs-in and
+  kicks off verification in parallel rather than gating login on it, to
+  avoid changing existing behavior.
+- **Password reset** — `POST /auth/password-reset/request` (public, always
+  returns the same response whether or not the email exists — anti-
+  enumeration) and `/confirm`. A successful reset revokes every session on
+  the account.
+- **Change password** (`POST /auth/change-password`, authenticated) — revokes
+  every other session, keeps the current device logged in.
+- **Two-factor auth (TOTP)** — `/auth/2fa/setup` (returns a QR code),
+  `/enable` (confirms a live code, issues 10 backup codes shown exactly
+  once), `/disable` (requires a live or backup code), `/verify` (completes
+  a 2FA-gated login).
+- **RBAC** — `@Roles()` decorator + `RolesGuard` exist
+  (`src/auth/decorators`, `src/auth/guards`) but aren't applied to any
+  existing route yet — available for future admin-only endpoints without
+  touching this module again.
+- **User profile** — `GET/PATCH /users/me` (authenticated). The pre-existing
+  public `GET /users/:id` is untouched. Note: `me`-prefixed routes are
+  declared *before* `:id` in the controller — Express matches path segments
+  in registration order, so this ordering is load-bearing, not cosmetic.
+- **Profile picture upload** — `POST /users/me/avatar` (multipart, 2MB
+  limit, JPEG/PNG/WebP only), served back from `/uploads/avatars/...`.
+  **Local disk storage** — documented in
+  `users/avatar-upload.config.ts` as the swap point for S3-compatible
+  object storage in production; won't survive a container restart or work
+  across multiple app instances as-is.
+- **Device management** — `GET /auth/sessions` lists active
+  sessions/devices (marks which one is the caller's current device);
+  `DELETE /auth/sessions/:id` revokes one.
+- **Login history** — `GET /users/me/login-history` — every login attempt,
+  successful or not, with reason/IP/user-agent.
+- **Email sending is a stub** (`auth/mailer/mailer.service.ts`) — logs the
+  email (including the full verification/reset link) instead of sending it,
+  so the whole flow is testable with zero provider credentials. In non-
+  production environments only, the verification/reset token is also
+  returned directly in the API response (`devVerificationToken` /
+  `devResetToken`) for the same reason. **Swap `MailerService.send` for a
+  real provider before production** — nothing else in the flow needs to
+  change.
+- **Schema migration required** — `prisma/schema.prisma` gained new models
+  (`Session`, `LoginHistoryEntry`, `EmailVerificationToken`,
+  `PasswordResetToken`, `TwoFactorBackupCode`) and new `User` columns (all
+  optional/defaulted, no backfill needed). Run
+  `npx prisma migrate dev --name identity_auth_module` before starting the
+  app — this wasn't run in this sandbox since there's no live database here.
+
 ## Fixes from initial run
 Running Slice 1+2 for real surfaced two real bugs, now fixed:
 - **Unhandled 401 crash on `/deals` and the listing detail page** — both

@@ -25,7 +25,7 @@ export function Nav() {
     >
       <div className="mx-auto flex h-16 max-w-content items-center justify-between px-6">
         <Link href="/" className="font-display text-lg font-semibold tracking-tight">
-          Atreavez
+          B13
         </Link>
 
         <nav className="hidden items-center gap-8 md:flex">
