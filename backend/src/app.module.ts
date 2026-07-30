@@ -15,6 +15,7 @@ import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
+import { ProfilesModule } from './profiles/profiles.module';
 import { ListingsModule } from './listings/listings.module';
 import { DealsModule } from './deals/deals.module';
 import { PaymentsModule } from './payments/payments.module';
@@ -48,6 +49,7 @@ import { PaymentsModule } from './payments/payments.module';
     HealthModule,
     AuthModule,
     UsersModule,
+    ProfilesModule,
     ListingsModule,
     DealsModule,
     PaymentsModule,

@@ -14,6 +14,12 @@ const config_1 = require("@nestjs/config");
 const auth_service_1 = require("./auth.service");
 const auth_controller_1 = require("./auth.controller");
 const jwt_strategy_1 = require("./jwt.strategy");
+const sessions_service_1 = require("./sessions.service");
+const login_history_service_1 = require("./login-history.service");
+const email_verification_service_1 = require("./email-verification.service");
+const password_reset_service_1 = require("./password-reset.service");
+const two_factor_service_1 = require("./two-factor.service");
+const mailer_service_1 = require("./mailer/mailer.service");
 let AuthModule = class AuthModule {
 };
 exports.AuthModule = AuthModule;
@@ -25,14 +31,23 @@ exports.AuthModule = AuthModule = __decorate([
                 imports: [config_1.ConfigModule],
                 inject: [config_1.ConfigService],
                 useFactory: (config) => ({
-                    secret: config.get('JWT_SECRET'),
+                    secret: config.get('JWT_SECRET') ?? config.get('jwt.secret'),
                     signOptions: { expiresIn: '15m' },
                 }),
             }),
         ],
-        providers: [auth_service_1.AuthService, jwt_strategy_1.JwtStrategy],
+        providers: [
+            auth_service_1.AuthService,
+            jwt_strategy_1.JwtStrategy,
+            sessions_service_1.SessionsService,
+            login_history_service_1.LoginHistoryService,
+            email_verification_service_1.EmailVerificationService,
+            password_reset_service_1.PasswordResetService,
+            two_factor_service_1.TwoFactorService,
+            mailer_service_1.MailerService,
+        ],
         controllers: [auth_controller_1.AuthController],
-        exports: [auth_service_1.AuthService],
+        exports: [auth_service_1.AuthService, sessions_service_1.SessionsService, login_history_service_1.LoginHistoryService],
     })
 ], AuthModule);
 //# sourceMappingURL=auth.module.js.map

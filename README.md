@@ -226,6 +226,62 @@ frontend's login/register pages work unmodified), everything else is new.
   `npx prisma migrate dev --name identity_auth_module` before starting the
   app — this wasn't run in this sandbox since there's no live database here.
 
+## User Profiles (Module 3)
+A new `profiles` module, built entirely additively — no existing file's
+behavior changed except one real integration point noted below.
+
+- **Buyer / Seller / Business profiles** — `GET/PATCH /profiles/me/buyer`,
+  `GET/POST /profiles/me/seller`, `GET/PUT /profiles/me/business`. All
+  lazily created on first access (no separate "initialize my profile"
+  step). A business profile requires an existing seller profile — it
+  extends selling, it isn't a standalone concept.
+- **Real integration with Module 2**: creating a seller profile for the
+  first time upgrades `User.role` from `BUYER` to `BOTH` automatically
+  (`SellerProfileService.getOrCreate`, covered by a dedicated unit test).
+  Someone who registered directly as `SELLER`, or is already `BOTH`, is
+  left untouched — this only ever widens access, never narrows it.
+- **Verification status** — modeled as a real trackable process
+  (`VerificationRequest`: type, status, notes, reviewedAt/By), not just a
+  boolean flag. `POST/GET /profiles/me/verification`. Denormalized
+  `verificationStatus` also lives on `SellerProfile`/`BusinessProfile` for
+  fast reads. The approve/reject path (`VerificationService.resolve`) is
+  implemented but not wired to any route yet — it's what a future admin
+  review module will call.
+- **Public profiles** — `GET /profiles/:userId` (no auth). Aggregates
+  identity + seller + business + public social links, and is the first
+  place `PrivacySettings` actually gets enforced: a `PRIVATE` profile still
+  shows the same basic fields the pre-existing `GET /users/:id` already
+  exposes (name/avatar/role/member-since), but hides everything this
+  module adds.
+- **Social links** — `/profiles/me/social-links` (CRUD). Each link has its
+  own `isPublic` toggle, independent of the account's overall profile
+  visibility.
+- **Address book** — `/profiles/me/addresses` (CRUD). Setting `isDefault`
+  on one address automatically clears it on any other — enforced in the
+  service layer since Prisma can't express "at most one true per user" as
+  a schema constraint directly.
+- **Saved locations** — `/profiles/me/saved-locations` (CRUD). Deliberately
+  separate from Address Book: a lat/lng map bookmark for location-aware
+  search/nearby-services, not a shipping address — no postal fields, no
+  validation against a postal format.
+- **Preferences, Privacy, Notification settings** — three focused 1:1
+  models rather than one catch-all settings blob, each independently
+  readable/writable and lazily created with sensible defaults:
+  - `GET/PATCH /profiles/me/preferences` — language, currency, theme,
+    timezone
+  - `GET/PATCH /profiles/me/privacy` — profile visibility, email/phone
+    exposure, message permissions, search indexing
+  - `GET/PATCH /profiles/me/notifications` — channel toggles
+    (email/push/SMS) plus per-topic toggles (deal updates, price drops,
+    new messages, marketing)
+- **Schema migration required** — 10 new models
+  (`BuyerProfile`, `SellerProfile`, `BusinessProfile`,
+  `VerificationRequest`, `SocialLink`, `Address`, `SavedLocation`,
+  `UserPreferences`, `PrivacySettings`, `NotificationSettings`) plus new
+  `User` relations. Same caveat as Module 2: run
+  `npx prisma migrate dev --name user_profiles_module` before starting the
+  app.
+
 ## Fixes from initial run
 Running Slice 1+2 for real surfaced two real bugs, now fixed:
 - **Unhandled 401 crash on `/deals` and the listing detail page** — both

@@ -49,6 +49,49 @@ enum PaymentStatus {
   REFUNDED
 }
 
+// --- Module 3: User Profiles ---
+enum VerificationRequestType {
+  IDENTITY
+  SELLER
+  BUSINESS
+}
+
+enum VerificationStatus {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum SocialPlatform {
+  WEBSITE
+  INSTAGRAM
+  TWITTER
+  FACEBOOK
+  LINKEDIN
+  TIKTOK
+  YOUTUBE
+  OTHER
+}
+
+enum BusinessType {
+  INDIVIDUAL
+  COMPANY
+  NONPROFIT
+  OTHER
+}
+
+enum ThemePreference {
+  LIGHT
+  DARK
+  SYSTEM
+}
+
+enum ProfileVisibility {
+  PUBLIC
+  PRIVATE
+}
+
 model User {
   id                String    @id @default(uuid())
   email             String    @unique
@@ -76,6 +119,17 @@ model User {
   emailVerificationTokens EmailVerificationToken[]
   passwordResetTokens  PasswordResetToken[]
   twoFactorBackupCodes TwoFactorBackupCode[]
+
+  // --- Module 3: User Profiles additions ---
+  buyerProfile         BuyerProfile?
+  sellerProfile        SellerProfile?
+  verificationRequests VerificationRequest[]
+  socialLinks          SocialLink[]
+  addresses            Address[]
+  savedLocations       SavedLocation[]
+  preferences          UserPreferences?
+  privacySettings      PrivacySettings?
+  notificationSettings NotificationSettings?
 
   @@map("users")
 }
@@ -246,4 +300,181 @@ model DealEvent {
   createdAt DateTime  @default(now())
 
   @@map("deal_events")
+}
+
+// ==========================================================================
+// Module 3: User Profiles
+// ==========================================================================
+
+// Buyer-specific profile data — separate from the base User record so the
+// "buyer profile" concept can grow (favorite categories, buying preferences)
+// without bloating User itself. Optional/lazy: created on first access.
+model BuyerProfile {
+  id                String   @id @default(uuid())
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id])
+  bio               String?
+  favoriteCategories String[] @default([])
+  defaultAddressId  String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("buyer_profiles")
+}
+
+// Created when a user starts selling. A user can hold both a BuyerProfile
+// and a SellerProfile at once (role BOTH) — the two are independent, not
+// mutually exclusive, matching how the platform's User.role already works.
+model SellerProfile {
+  id                 String              @id @default(uuid())
+  userId             String              @unique
+  user               User                @relation(fields: [userId], references: [id])
+  storeName          String?
+  bio                String?
+  responseTimeHours  Int?
+  ratingAvg          Decimal             @default(0) @db.Decimal(3, 2)
+  ratingCount        Int                 @default(0)
+  verificationStatus VerificationStatus  @default(UNVERIFIED)
+  businessProfile    BusinessProfile?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  @@map("seller_profiles")
+}
+
+// Optional — only present for sellers who register as a business rather
+// than an individual. Kept separate from SellerProfile so "am I a business"
+// is a clean presence check, not an extra flag to keep in sync.
+model BusinessProfile {
+  id                 String              @id @default(uuid())
+  sellerProfileId    String              @unique
+  sellerProfile      SellerProfile       @relation(fields: [sellerProfileId], references: [id])
+  legalName          String
+  businessType       BusinessType        @default(INDIVIDUAL)
+  registrationNumber String?
+  taxId              String?
+  verificationStatus VerificationStatus  @default(UNVERIFIED)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  @@map("business_profiles")
+}
+
+// A trackable verification process (not just a flag) — every request a user
+// makes to get identity/seller/business status verified, reviewed
+// out-of-band by an admin (admin review tooling is a future module; this is
+// the data model it will operate on). Denormalized status also lives on
+// SellerProfile/BusinessProfile for fast reads without joining here.
+model VerificationRequest {
+  id         String                  @id @default(uuid())
+  userId     String
+  user       User                    @relation(fields: [userId], references: [id])
+  type       VerificationRequestType
+  status     VerificationStatus      @default(PENDING)
+  notes      String?
+  reviewedAt DateTime?
+  reviewedBy String?
+  createdAt  DateTime                @default(now())
+
+  @@index([userId, type])
+  @@map("verification_requests")
+}
+
+model SocialLink {
+  id       String         @id @default(uuid())
+  userId   String
+  user     User           @relation(fields: [userId], references: [id])
+  platform SocialPlatform
+  url      String
+  isPublic Boolean        @default(true)
+
+  @@index([userId])
+  @@map("social_links")
+}
+
+// Shipping/billing address book — distinct from SavedLocation below, which
+// is a map bookmark rather than a postal address.
+model Address {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  label         String? // "Home", "Work", etc.
+  recipientName String?
+  line1         String
+  line2         String?
+  city          String
+  region        String?
+  postalCode    String?
+  country       String // ISO 3166-1 alpha-2
+  phone         String?
+  isDefault     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId])
+  @@map("addresses")
+}
+
+// A bookmarked map point (e.g. "near my usual pickup spot") — lighter
+// weight than a full postal Address, used for location-aware search/
+// nearby-services features rather than shipping.
+model SavedLocation {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  label     String
+  latitude  Float
+  longitude Float
+  address   String? // freeform, human-readable — not validated like Address
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("saved_locations")
+}
+
+// Language/currency/theme/timezone — one row per user, lazily created with
+// defaults on first read so there's no separate "initialize my settings" step.
+model UserPreferences {
+  id        String          @id @default(uuid())
+  userId    String          @unique
+  user      User            @relation(fields: [userId], references: [id])
+  language  String          @default("en") // ISO 639-1
+  currency  String          @default("USD") // ISO 4217
+  theme     ThemePreference @default(SYSTEM)
+  timezone  String          @default("UTC") // IANA timezone name
+  updatedAt DateTime        @updatedAt
+
+  @@map("user_preferences")
+}
+
+model PrivacySettings {
+  id                       String            @id @default(uuid())
+  userId                   String            @unique
+  user                     User              @relation(fields: [userId], references: [id])
+  profileVisibility        ProfileVisibility @default(PUBLIC)
+  showEmailPublicly        Boolean           @default(false)
+  showPhonePublicly        Boolean           @default(false)
+  allowMessagesFromStrangers Boolean         @default(true)
+  searchEngineIndexing     Boolean           @default(true)
+  updatedAt                DateTime          @updatedAt
+
+  @@map("privacy_settings")
+}
+
+model NotificationSettings {
+  id               String   @id @default(uuid())
+  userId           String   @unique
+  user             User     @relation(fields: [userId], references: [id])
+  emailEnabled     Boolean  @default(true)
+  pushEnabled      Boolean  @default(true)
+  smsEnabled       Boolean  @default(false)
+  // Granular topic toggles — only meaningful when their parent channel
+  // above is also enabled; enforced in the service layer, not the schema.
+  dealUpdates      Boolean  @default(true)
+  priceDrops       Boolean  @default(true)
+  newMessages      Boolean  @default(true)
+  marketing        Boolean  @default(false)
+  updatedAt        DateTime @updatedAt
+
+  @@map("notification_settings")
 }

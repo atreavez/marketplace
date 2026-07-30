@@ -44,48 +44,130 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthService = void 0;
 const common_1 = require("@nestjs/common");
+const config_1 = require("@nestjs/config");
 const jwt_1 = require("@nestjs/jwt");
 const argon2 = __importStar(require("argon2"));
 const prisma_service_1 = require("../prisma/prisma.service");
+const password_util_1 = require("./password.util");
+const sessions_service_1 = require("./sessions.service");
+const login_history_service_1 = require("./login-history.service");
+const email_verification_service_1 = require("./email-verification.service");
+const two_factor_service_1 = require("./two-factor.service");
 let AuthService = class AuthService {
-    constructor(prisma, jwt) {
+    constructor(prisma, jwt, config, sessions, loginHistory, emailVerification, twoFactor) {
         this.prisma = prisma;
         this.jwt = jwt;
+        this.config = config;
+        this.sessions = sessions;
+        this.loginHistory = loginHistory;
+        this.emailVerification = emailVerification;
+        this.twoFactor = twoFactor;
     }
-    async register(dto) {
+    get isProd() {
+        return this.config.get('app.env') === 'production';
+    }
+    async register(dto, ctx) {
         const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
         if (existing) {
             throw new common_1.ConflictException('Unable to register with these details');
         }
-        const passwordHash = await argon2.hash(dto.password, {
-            type: argon2.argon2id,
-            memoryCost: 19456,
-            timeCost: 2,
-            parallelism: 1,
-        });
+        const passwordHash = await argon2.hash(dto.password, password_util_1.ARGON2ID_OPTIONS);
         const user = await this.prisma.user.create({
             data: { email: dto.email, passwordHash, displayName: dto.displayName },
         });
-        return this.issueTokens(user.id, user.email, user.role);
+        await this.loginHistory.record(user.id, true, 'register', ctx);
+        const devVerificationToken = await this.emailVerification.requestVerification(user.id, user.email);
+        const tokens = await this.issueSessionTokens(user, ctx);
+        return {
+            ...tokens,
+            ...(this.isProd ? {} : { devVerificationToken }),
+        };
     }
-    async login(dto) {
+    async login(dto, ctx) {
         const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
         const validHash = user?.passwordHash ?? (await argon2.hash('dummy-to-equalize-timing'));
         const valid = await argon2.verify(validHash, dto.password).catch(() => false);
         if (!user || !valid) {
+            if (user)
+                await this.loginHistory.record(user.id, false, 'invalid_password', ctx);
             throw new common_1.UnauthorizedException('Invalid credentials');
         }
-        return this.issueTokens(user.id, user.email, user.role);
+        if (user.twoFactorEnabled) {
+            await this.loginHistory.record(user.id, false, 'password_ok_2fa_pending', ctx);
+            const twoFactorToken = await this.jwt.signAsync({ sub: user.id, purpose: 'two_factor' }, { expiresIn: '5m' });
+            return { twoFactorRequired: true, twoFactorToken };
+        }
+        await this.loginHistory.record(user.id, true, 'success', ctx);
+        return this.issueSessionTokens(user, ctx);
     }
-    async issueTokens(sub, email, role) {
-        const accessToken = await this.jwt.signAsync({ sub, email, role }, { expiresIn: '15m' });
-        const refreshToken = await this.jwt.signAsync({ sub }, { expiresIn: '7d' });
+    async verifyTwoFactorLogin(twoFactorToken, code, ctx) {
+        let payload;
+        try {
+            payload = await this.jwt.verifyAsync(twoFactorToken);
+        }
+        catch {
+            throw new common_1.UnauthorizedException('Invalid or expired two-factor challenge');
+        }
+        if (payload.purpose !== 'two_factor') {
+            throw new common_1.UnauthorizedException('Invalid challenge token');
+        }
+        const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
+        if (!user)
+            throw new common_1.UnauthorizedException('Invalid challenge token');
+        const verified = await this.twoFactor.verifyCodeOrBackup(user.id, code);
+        if (!verified) {
+            await this.loginHistory.record(user.id, false, '2fa_failed', ctx);
+            throw new common_1.UnauthorizedException('Invalid authenticator or backup code');
+        }
+        await this.loginHistory.record(user.id, true, 'success_2fa', ctx);
+        return this.issueSessionTokens(user, ctx);
+    }
+    async refresh(rawRefreshToken) {
+        const { session, rawToken } = await this.sessions.rotate(rawRefreshToken);
+        const user = await this.prisma.user.findUnique({ where: { id: session.userId } });
+        if (!user)
+            throw new common_1.UnauthorizedException('Invalid refresh token');
+        const accessToken = await this.signAccessToken(user, session.id);
+        return { accessToken, refreshToken: rawToken };
+    }
+    async logout(rawRefreshToken) {
+        await this.sessions.revokeByRawToken(rawRefreshToken);
+    }
+    async logoutAll(userId, currentSessionId) {
+        await this.sessions.revokeAll(userId, currentSessionId);
+    }
+    async changePassword(userId, dto, currentSessionId) {
+        const user = await this.prisma.user.findUnique({ where: { id: userId } });
+        if (!user)
+            throw new common_1.UnauthorizedException();
+        const valid = await argon2.verify(user.passwordHash, dto.currentPassword).catch(() => false);
+        if (!valid)
+            throw new common_1.UnauthorizedException('Current password is incorrect');
+        const passwordHash = await argon2.hash(dto.newPassword, password_util_1.ARGON2ID_OPTIONS);
+        await this.prisma.user.update({
+            where: { id: userId },
+            data: { passwordHash, passwordChangedAt: new Date() },
+        });
+        await this.sessions.revokeAll(userId, currentSessionId);
+    }
+    async issueSessionTokens(user, ctx) {
+        const { session, rawToken: refreshToken } = await this.sessions.create(user.id, ctx);
+        const accessToken = await this.signAccessToken(user, session.id);
         return { accessToken, refreshToken };
+    }
+    async signAccessToken(user, sessionId) {
+        return this.jwt.signAsync({ sub: user.id, email: user.email, role: user.role, sessionId }, { expiresIn: '15m' });
     }
 };
 exports.AuthService = AuthService;
 exports.AuthService = AuthService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService, jwt_1.JwtService])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        jwt_1.JwtService,
+        config_1.ConfigService,
+        sessions_service_1.SessionsService,
+        login_history_service_1.LoginHistoryService,
+        email_verification_service_1.EmailVerificationService,
+        two_factor_service_1.TwoFactorService])
 ], AuthService);
 //# sourceMappingURL=auth.service.js.map
